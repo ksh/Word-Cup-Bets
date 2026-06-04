@@ -9,7 +9,7 @@ app.secret_key = "world_cup_secret_key_123"
 DB_FILE = "world_cup_bets.db"
 
 # List of users for the application dropdown
-USERS = ["Alice", "Bob", "Charlie", "Dave", "Emma"]
+USERS = ["Arthur", "Carlos","Filip", "Josee", "Mike", "Newton", "Ricardo", "Rodolfo", "Sue"]
 
 # Initial Match Schedule Data (Normalized to UTC timestamps)
 MATCH_SCHEDULE = [
