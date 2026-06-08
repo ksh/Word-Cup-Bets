@@ -1,7 +1,7 @@
 import os
 import sqlite3
 from datetime import datetime, timedelta
-from flask import Flask, request, render_template, redirect, url_for, flash
+from flask import Flask, request, render_template, redirect, url_for, flash, send_file
 from jinja2 import DictLoader
 
 app = Flask(__name__)
@@ -428,6 +428,13 @@ def admin_save():
     conn.close()
     flash("Official match outcomes updated, leaderboard points recalculated!")
     return redirect(url_for("admin_panel"))
+
+@app.route("/download-db-backup-xyz")
+def download_db():
+    if os.path.exists(DB_FILE):
+        return send_file(DB_FILE, as_attachment=True)
+    else:
+        return "Database file not found yet!", 404
 
 if __name__ == "__main__":
     app.run(debug=True)
