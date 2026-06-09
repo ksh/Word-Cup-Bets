@@ -335,8 +335,3 @@ ADMIN_HTML = """
 </body>
 </html>
 """
-        <button type="submit" style="margin-top:15px; background:red; color:white; padding:10px; border:none; cursor:pointer;">Update Official Tournament Scores</button>
-    </form>
-</body>
-</html>
-"""
