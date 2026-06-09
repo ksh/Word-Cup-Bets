@@ -156,8 +156,17 @@ def dashboard():
     current_username = current_user.username 
     conn = get_db()
     
-    if request.method == "POST":
+  if request.method == "POST":
         db_matches = conn.execute("SELECT id, kickoff FROM matches").fetchall()
+        
+        # 1. Clean out the user's old unlocked bets to prevent database locks
+        for m in db_matches:
+            kickoff_dt = datetime.strptime(m['kickoff'], "%Y-%m-%d %H:%M:%S")
+            is_locked = now >= (kickoff_dt - timedelta(hours=1))
+            if not is_locked:
+                conn.execute("DELETE FROM bets WHERE user=? AND match_id=?", (current_username, int(m['id'])))
+        
+        # 2. Insert the fresh entries safely
         for m in db_matches:
             kickoff_dt = datetime.strptime(m['kickoff'], "%Y-%m-%d %H:%M:%S")
             is_locked = now >= (kickoff_dt - timedelta(hours=1))
@@ -165,11 +174,16 @@ def dashboard():
             if not is_locked:
                 h_bet = request.form.get(f"home_bet_{m['id']}")
                 a_bet = request.form.get(f"away_bet_{m['id']}")
-                if h_bet is not None and h_bet.strip() != "" and a_bet is not None and a_bet.strip() != "":
-                    conn.execute("""
-                        INSERT INTO bets (user, match_id, home_bet, away_bet) VALUES (?, ?, ?, ?)
-                        ON CONFLICT(user, match_id) DO UPDATE SET home_bet=excluded.home_bet, away_bet=excluded.away_bet
-                    """, (current_username, m['id'], int(h_bet), int(a_bet)))
+                
+                if h_bet is not None and a_bet is not None:
+                    h_str = str(h_bet).strip()
+                    a_str = str(a_bet).strip()
+                    if h_str != "" and a_str != "":
+                        conn.execute("""
+                            INSERT INTO bets (user, match_id, home_bet, away_bet) 
+                            VALUES (?, ?, ?, ?)
+                        """, (current_username, int(m['id']), int(h_str), int(a_str)))
+                        
         conn.commit()
         conn.close()
         return redirect(url_for("dashboard"))
