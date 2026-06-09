@@ -1,16 +1,17 @@
 import os
 from datetime import datetime, timedelta
 import sqlite3
-from flask import Flask, render_template, request, redirect, url_for, flash
+from flask import Flask, render_template_string, request, redirect, url_for, flash
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 
+# Force Flask to look locally and ignore missing template directories
 app = Flask(__name__, template_folder='.', static_folder=None)
-app.secret_key = "super-secret-world-cup-key-2026" # Change this to a random string
+app.secret_key = "super-secret-world-cup-key-2026"
 
-# Configure Flask-Login
+# Configure Flask-Login securely
 login_manager = LoginManager()
-login_manager.login_manager_view = "login"
+login_manager.login_view = "login"  # Corrected config key
 login_manager.init_app(app)
 
 DB_FILE = "world_cup_bets.db"
@@ -20,7 +21,6 @@ def get_db():
     conn.row_factory = sqlite3.Row
     return conn
 
-# User Class for Flask-Login
 class User(UserMixin):
     def __init__(self, id, username):
         self.id = id
@@ -35,11 +35,8 @@ def load_user(user_id):
         return User(user['id'], user['username'])
     return None
 
-# Database Setup (Creates Users, Matches, and Bets tables)
 def init_db():
     conn = get_db()
-    
-    # 1. Create Users Table
     conn.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -47,8 +44,6 @@ def init_db():
             password_hash TEXT NOT NULL
         )
     """)
-    
-    # 2. Create Matches Table
     conn.execute("""
         CREATE TABLE IF NOT EXISTS matches (
             id INTEGER PRIMARY KEY,
@@ -60,8 +55,6 @@ def init_db():
             away_score INTEGER
         )
     """)
-    
-    # 3. Create Bets Table
     conn.execute("""
         CREATE TABLE IF NOT EXISTS bets (
             user TEXT NOT NULL,
@@ -72,7 +65,6 @@ def init_db():
         )
     """)
     
-    # Seed the first few games as a test if table is empty
     row_count = conn.execute("SELECT COUNT(*) FROM matches").fetchone()[0]
     if row_count == 0:
         sample_matches = [
@@ -99,7 +91,6 @@ def register():
             return redirect(url_for("register"))
             
         hashed_password = generate_password_hash(password)
-        
         conn = get_db()
         try:
             conn.execute("INSERT INTO users (username, password_hash) VALUES (?, ?)", (username, hashed_password))
@@ -111,7 +102,7 @@ def register():
         finally:
             conn.close()
             
-    return """
+    return render_template_string("""
     <div style="max-width:400px; margin:80px auto; font-family:sans-serif; border:1px solid #ddd; padding:30px; border-radius:8px;">
         <h2>📝 Create Tournament Account</h2>
         {% with messages = get_flashed_messages() %}{% if messages %}{% for m in messages %}<p style="color:red;">{{m}}</p>{% endfor %}{% endif %}{% endwith %}
@@ -122,7 +113,7 @@ def register():
         </form>
         <p style="margin-top:15px; text-align:center;"><a href="/login">Already have an account? Log in here</a></p>
     </div>
-    """
+    """)
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -141,7 +132,7 @@ def login():
         else:
             flash("Invalid username or password.")
             
-    return """
+    return render_template_string("""
     <div style="max-width:400px; margin:80px auto; font-family:sans-serif; border:1px solid #ddd; padding:30px; border-radius:8px;">
         <h2>🔐 Player Log-In</h2>
         {% with messages = get_flashed_messages() %}{% if messages %}{% for m in messages %}<p style="color:red;">{{m}}</p>{% endfor %}{% endif %}{% endwith %}
@@ -152,7 +143,7 @@ def login():
         </form>
         <p style="margin-top:15px; text-align:center;"><a href="/register">New player? Register your account here</a></p>
     </div>
-    """
+    """)
 
 @app.route("/logout")
 @login_required
@@ -161,18 +152,15 @@ def logout():
     flash("You have logged out.")
     return redirect(url_for("login"))
 
-# --- SECURE LEADERBOARD & DASHBOARD ---
+# --- SECURE DASHBOARD ---
 
 @app.route("/", methods=["GET", "POST"])
 @login_required
 def dashboard():
     now = datetime.utcnow()
-    # EXPLICIT SAFETY: The logged-in username is pulled straight from the encrypted session cookie
     current_username = current_user.username 
-    
     conn = get_db()
     
-    # Save bets if submitted
     if request.method == "POST":
         db_matches = conn.execute("SELECT id, kickoff FROM matches").fetchall()
         for m in db_matches:
@@ -182,18 +170,15 @@ def dashboard():
             if not is_locked:
                 h_bet = request.form.get(f"home_bet_{m['id']}")
                 a_bet = request.form.get(f"away_bet_{m['id']}")
-                
                 if h_bet != "" and h_bet is not None and a_bet != "" and a_bet is not None:
                     conn.execute("""
-                        INSERT INTO bets (user, match_id, home_bet, away_bet)
-                        VALUES (?, ?, ?, ?)
+                        INSERT INTO bets (user, match_id, home_bet, away_bet) VALUES (?, ?, ?, ?)
                         ON CONFLICT(user, match_id) DO UPDATE SET home_bet=excluded.home_bet, away_bet=excluded.away_bet
                     """, (current_username, m['id'], int(h_bet), int(a_bet)))
         conn.commit()
         flash("Your predictions have been securely saved!")
         return redirect(url_for("dashboard"))
 
-    # Fetch data to display
     db_matches = conn.execute("SELECT * FROM matches ORDER BY kickoff ASC, id ASC").fetchall()
     db_user_bets = conn.execute("SELECT * FROM bets WHERE user=?", (current_username,)).fetchall()
     user_bets = {b['match_id']: b for b in db_user_bets}
@@ -205,7 +190,6 @@ def dashboard():
         is_locked = now >= (kickoff_dt - timedelta(hours=1)) or has_official_score
         is_started = now >= kickoff_dt
         
-        # Pull opponent bets ONLY if match has already started
         other_bets = []
         if is_started:
             db_other = conn.execute("SELECT user, home_bet, away_bet FROM bets WHERE match_id=? AND user!=?", (m['id'], current_username)).fetchall()
@@ -221,7 +205,6 @@ def dashboard():
             'other_bets': other_bets
         })
         
-    # Standings calculation logic
     standings = []
     db_users = conn.execute("SELECT username FROM users").fetchall()
     for u_row in db_users:
@@ -231,20 +214,16 @@ def dashboard():
         for b in u_bets:
             m = conn.execute("SELECT home_score, away_score FROM matches WHERE id=?", (b['match_id'],)).fetchone()
             if m and m['home_score'] is not None and m['away_score'] is not None:
-                # Exact Score: 10 points
                 if b['home_bet'] == m['home_score'] and b['away_bet'] == m['away_score']:
                     pts += 10
-                # Correct Column: 4 points
                 elif (b['home_bet'] > b['away_bet'] and m['home_score'] > m['away_score']) or \
                      (b['home_bet'] < b['away_bet'] and m['home_score'] < m['away_score']) or \
                      (b['home_bet'] == b['away_bet'] and m['home_score'] == m['away_score']):
                     pts += 4
         standings.append({'user': uname, 'points': pts})
     standings = sorted(standings, key=lambda x: x['points'], reverse=True)
-    
     conn.close()
     
-    # Simplified, dynamic frontend view
     return render_template_string(INDEX_HTML, current_user=current_username, matches=match_data, standings=standings)
 
 # --- ADMIN VIEW ---
@@ -271,9 +250,6 @@ def admin_panel():
     conn.close()
     return render_template_string(ADMIN_HTML, matches=matches)
 
-# Inline HTML definitions to keep everything organized in one file
-from flask import render_template_string
-
 INDEX_HTML = """
 <!DOCTYPE html>
 <html>
@@ -287,8 +263,6 @@ INDEX_HTML = """
         table { width: 100%; border-collapse: collapse; margin-top: 15px; }
         th, td { border: 1px solid #ddd; padding: 10px; text-align: center; }
         th { background: #0b3c5d; color: white; }
-        .match-row { background: #fff; }
-        .locked { background: #f9f9f9; color: #888; }
     </style>
 </head>
 <body>
@@ -296,68 +270,44 @@ INDEX_HTML = """
         <h2>⚽ World Cup Predictor</h2>
         <p>Logged in as: <strong>{{ current_user }}</strong> | <a href="/logout">Logout</a></p>
     </div>
-    
     <div class="container">
         <div class="main-panel">
             <h3>📋 Match Schedule & Your Predictions</h3>
             <form method="POST">
                 <table>
-                    <tr>
-                        <th>Group</th>
-                        <th>Matchup</th>
-                        <th>Official Result</th>
-                        <th>Your Prediction</th>
-                        <th>Opponent Selections</th>
-                    </tr>
+                    <tr><th>Group</th><th>Matchup</th><th>Official Result</th><th>Your Prediction</th><th>Opponent Selections</th></tr>
                     {% for m in matches %}
-                    <tr class="match-row {% if m.is_locked %}locked{% endif %}">
+                    <tr>
                         <td>{{ m.grp }}</td>
                         <td><strong>{{ m.home_team }}</strong> vs <strong>{{ m.away_team }}</strong><br><small>{{ m.kickoff }}</small></td>
-                        <td>
-                            {% if m.home_score is not none %}
-                                <span style="background:#0b3c5d; color:white; padding:3px 8px; border-radius:4px; font-weight:bold;">{{ m.home_score }} - {{ m.away_score }}</span>
-                            {% else %}
-                                <span style="color:#888;">TBD</span>
-                            {% endif %}
-                        </td>
+                        <td>{% if m.home_score is not none %}{{ m.home_score }} - {{ m.away_score }}{% else %}TBD{% endif %}</td>
                         <td>
                             {% if m.is_locked %}
-                                <strong>{{ m.user_home_bet }} - {{ m.user_away_bet }}</strong> (Locked)
+                                <strong>{{ m.user_home_bet }} - {{ m.user_away_bet }}</strong>
                             {% else %}
-                                <input type="number" name="home_bet_{{ m.id }}" value="{{ m.user_home_bet }}" style="width:40px; text-align:center;"> - 
-                                <input type="number" name="away_bet_{{ m.id }}" value="{{ m.user_away_bet }}" style="width:40px; text-align:center;">
+                                <input type="number" name="home_bet_{{ m.id }}" value="{{ m.user_home_bet }}" style="width:40px;"> - 
+                                <input type="number" name="away_bet_{{ m.id }}" value="{{ m.user_away_bet }}" style="width:40px;">
                             {% endif %}
                         </td>
                         <td>
                             {% if m.is_started %}
-                                {% for ob in m.other_bets %}
-                                    <div style="font-size:0.85em;">{{ ob.user }}: {{ ob.home_bet }}-{{ ob.away_bet }}</div>
-                                {% endfor %}
+                                {% for ob in m.other_bets %}{{ ob.user }}: {{ ob.home_bet }}-{{ ob.away_bet }}<br>{% endfor %}
                             {% else %}
-                                <span style="color:#aaa; font-style:italic; font-size:0.85em;">🔒 Hidden until kickoff</span>
+                                🔒 Locked
                             {% endif %}
                         </td>
                     </tr>
                     {% endfor %}
                 </table>
-                <button type="submit" style="margin-top:20px; background:#0b3c5d; color:white; padding:12px 24px; border:none; border-radius:4px; cursor:pointer; font-weight:bold; width:100%;">💾 Save Predictions</button>
+                <button type="submit" style="margin-top:20px; background:#0b3c5d; color:white; padding:12px; width:100%; border:none; cursor:pointer;">💾 Save Predictions</button>
             </form>
         </div>
-        
         <div class="side-panel">
             <h3>🏆 Leaderboard</h3>
             <table>
-                <tr>
-                    <th>Rank</th>
-                    <th>User</th>
-                    <th>Points</th>
-                </tr>
+                <tr><th>Rank</th><th>User</th><th>Points</th></tr>
                 {% for row in standings %}
-                <tr>
-                    <td><strong>#{{ loop.index }}</strong></td>
-                    <td>{{ row.user }}</td>
-                    <td><strong>{{ row.points }}</strong></td>
-                </tr>
+                <tr><td>#{{ loop.index }}</td><td>{{ row.user }}</td><td><strong>{{ row.points }}</strong></td></tr>
                 {% endfor %}
             </table>
         </div>
@@ -372,7 +322,7 @@ ADMIN_HTML = """
 <head><title>Admin Control</title></head>
 <body style="font-family:sans-serif; margin:30px;">
     <h2>⚙️ Admin Match Score Entry</h2>
-    <form method="POST" action="/admin/save?token=mysecret2026">
+    <form method="POST" action="/admin?token=mysecret2026">
         <table border="1" cellpadding="8" style="border-collapse:collapse; width:100%; max-width:600px;">
             <tr style="background:#ddd;"><th>Match</th><th>Official Score</th></tr>
             {% for m in matches %}
@@ -385,7 +335,7 @@ ADMIN_HTML = """
             </tr>
             {% endfor %}
         </table>
-        <button type="submit" style="margin-top:15px; background:red; color:white; padding:10px 20px; border:none; cursor:pointer;">Update Official Tournament Scores</button>
+        <button type="submit" style="margin-top:15px; background:red; color:white; padding:10px; border:none; cursor:pointer;">Update Official Tournament Scores</button>
     </form>
 </body>
 </html>
