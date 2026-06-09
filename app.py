@@ -317,65 +317,78 @@ def compute_leaderboard():
                 
     return sorted(scores.items(), key=lambda x: x[1], reverse=True)
 
-@app.route("/")
+@app.route("/", methods=["GET", "POST"])
 def dashboard():
-    active_user = request.args.get("active_user", USERS[0])
     now = datetime.utcnow()
     
-    conn = get_db()
-    db_matches = conn.execute("SELECT * FROM matches ORDER BY kickoff ASC, id ASC").fetchall()
-    db_bets = conn.execute("SELECT * FROM bets").fetchall()
-    conn.close()
+    # Handle user selection from the dropdown menu
+    current_user = request.args.get("user") or request.form.get("user") or USERS[0]
     
-    bets_lookup = {}
-    for b in db_bets:
-        bets_lookup.setdefault(b['match_id'], {})[b['user']] = (b['home_bet'], b['away_bet'])
-        
+    conn = get_db()
+    
+    # 1. Fetch all the matches ordered by timeline
+    db_matches = conn.execute("SELECT * FROM matches ORDER BY kickoff ASC, id ASC").fetchall()
+    
+    # 2. Fetch only the currently logged-in user's bets
+    db_user_bets = conn.execute("SELECT * FROM bets WHERE user=?", (current_user,)).fetchall()
+    user_bets = {b['match_id']: b for b in db_user_bets}
+    
     match_data = []
     for m in db_matches:
         kickoff_dt = datetime.strptime(m['kickoff'], "%Y-%m-%d %H:%M:%S")
         
-        # Stricter Lockout: Lock bets if time is up, OR if an admin has already entered an official score line
+        # Is an admin testing or setting official scores?
         has_official_score = m['home_score'] is not None and m['away_score'] is not None
         
+        # Lockout rule: 1 hour before kickoff or if official score is entered
         is_locked = now >= (kickoff_dt - timedelta(hours=1)) or has_official_score
+        
+        # Core Secrecy Trigger: Has the game actually kicked off in real-world UTC time?
         is_started = now >= kickoff_dt
         
-        # COPA RULE FIX: If someone inputs a score early for testing, DO NOT leak other bets 
-        # unless the official tournament calendar clock says the game has legally kicked off.
-        if has_official_score and not is_started:
-            is_reveal_allowed = False
-        else:
-            is_reveal_allowed = is_started
-            
-        user_bets = bets_lookup.get(m['id'], {})
-        my_bet = user_bets.get(active_user)
-        
         other_bets = []
-        if is_reveal_allowed:  # <-- Updated here
-            for u in USERS:
-                if u != active_user and u in user_bets:
-                    other_bets.append((u, user_bets[u][0], user_bets[u][1]))
-                    
+        # STRICT DATABASE FILTERING:
+        # The app will ONLY query and load opponent bets if the match has officially started.
+        if is_started:
+            db_other = conn.execute(
+                "SELECT user, home_bet, away_bet FROM bets WHERE match_id=? AND user!=?",
+                (m['id'], current_user)
+            ).fetchall()
+            for ob in db_other:
+                other_bets.append({
+                    'user': ob['user'],
+                    'home_bet': ob['home_bet'],
+                    'away_bet': ob['away_bet']
+                })
+        # If the match has NOT started, other_bets remains completely empty []
+        
         match_data.append({
-            "id": m['id'], "grp": m['grp'], "home_team": m['home_team'], "away_team": m['away_team'],
-            "kickoff": m['kickoff'], "home_score": m['home_score'], "away_score": m['away_score'],
-            "is_locked": is_locked, "is_started": is_started,
-            "my_bet_h": my_bet[0] if my_bet else None, "my_bet_a": my_bet[1] if my_bet else None,
-            "other_bets": other_bets
+            'id': m['id'],
+            'grp': m['grp'],
+            'home_team': m['home_team'],
+            'away_team': m['away_team'],
+            'kickoff': m['kickoff'],
+            'home_score': m['home_score'],
+            'away_score': m['away_score'],
+            'is_locked': is_locked,
+            'is_started': is_started,
+            'user_home_bet': user_bets.get(m['id'], {}).get('home_bet', ''),
+            'user_away_bet': user_bets.get(m['id'], {}).get('away_bet', ''),
+            'other_bets': other_bets  # This will be perfectly empty for all future matches
         })
         
-    leaderboard = compute_leaderboard()
+    # Recalculate standings for the leaderboard panel
+    standings = calculate_standings(conn)
+    conn.close()
     
     return render_template(
-        'dashboard',
-        current_time=now.strftime("%Y-%m-%d %H:%M:%S"),
-        leaderboard=leaderboard,
+        'index',
         users=USERS,
-        active_user=active_user,
-        match_data=match_data
+        current_user=current_user,
+        matches=match_data,
+        standings=standings,
+        current_time=now.strftime("%Y-%m-%d %H:%M:%S")
     )
-
 @app.route("/place-bet", methods=["POST"])
 def place_bet():
     user = request.form.get("user")
