@@ -230,7 +230,7 @@ ADMIN_TEMPLATE = """
 <div class="card">
     <h2>⚙️ Administrator: Input Official Scores</h2>
     <p>Entering values here automatically evaluates outcome matrix math and pushes score adjustments out to the main leaderboard.</p>
-    <form method="POST" action="/admin/save">
+    <form method="POST" action="/admin/save?token=mysecret2026">
         <table>
             <tr>
                 <th>ID</th>
