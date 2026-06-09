@@ -406,6 +406,12 @@ def place_bet():
 
 @app.route("/admin")
 def admin_panel():
+    # Changed 'pass' to 'token' to avoid Python keyword conflicts
+    password = request.args.get("token")
+    if password != "mysecret2026":
+        flash("🔒 Unauthorized Access! The admin panel is locked to prevent accidental score updates.")
+        return redirect(url_for("dashboard"))
+
     conn = get_db()
     matches = conn.execute("SELECT * FROM matches ORDER BY kickoff ASC, id ASC").fetchall()
     conn.close()
@@ -417,10 +423,10 @@ def admin_panel():
 
 @app.route("/admin/save", methods=["POST"])
 def admin_save():
-    # Double check this matches whatever secret string you selected earlier!
-    password = request.args.get("pass")
+    # Changed 'pass' to 'token' here as well
+    password = request.args.get("token")
     if password != "mysecret2026":
-        flash("🔒 Unauthorized Access!")
+        flash("🔒 Unauthorized! Score update rejected.")
         return redirect(url_for("dashboard"))
 
     conn = get_db()
@@ -430,16 +436,12 @@ def admin_save():
         h_val = request.form.get(f"score_h_{m['id']}")
         a_val = request.form.get(f"score_a_{m['id']}")
         
-        # EXPLICIT FIX: This reads whatever the form inputs send.
-        # If the text box is empty, has spaces, or was deleted, it forces a database wipe.
         if h_val is not None and h_val.strip() != "" and a_val is not None and a_val.strip() != "":
             conn.execute(
                 "UPDATE matches SET home_score=?, away_score=? WHERE id=?",
                 (int(h_val.strip()), int(a_val.strip()), m['id'])
             )
         else:
-            # THIS IS CRITICAL: If you deleted the numbers, this forcefully 
-            # resets the row back to NULL, wiping out Ricardo's test scores completely.
             conn.execute(
                 "UPDATE matches SET home_score=NULL, away_score=NULL WHERE id=?",
                 (m['id'],)
@@ -448,7 +450,8 @@ def admin_save():
     conn.commit()
     conn.close()
     flash("Database synchronized! Blank entries successfully reset to TBD.")
-    return redirect(url_for("admin_panel", pass=password))
+    return redirect(url_for("admin_panel", token=password))
+    
 @app.route("/download-db-backup-xyz")
 def download_db():
     if os.path.exists(DB_FILE):
