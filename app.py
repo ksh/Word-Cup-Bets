@@ -190,7 +190,7 @@ def dashboard():
 
     db_matches = conn.execute("SELECT * FROM matches ORDER BY kickoff ASC, id ASC").fetchall()
     db_user_bets = conn.execute("SELECT * FROM bets WHERE user=?", (current_username,)).fetchall()
-    user_bets = {b['match_id']: b for b in db_user_bets}
+    user_bets = {b['match_id']: dict(b) for b in db_user_bets}
     
     match_data = []
     for m in db_matches:
