@@ -294,8 +294,8 @@ INDEX_HTML = """
                             {% if m.is_locked %}
                                 <strong>{{ m.user_home_bet }} - {{ m.user_away_bet }}</strong>
                             {% else %}
-                                <input type="number" name="home_bet_{{ m.id }}" value="{{ m.user_home_bet }}" style="width:40px;"> - 
-                                <input type="number" name="away_bet_{{ m.id }}" value="{{ m.user_away_bet }}" style="width:40px;">
+                                <input type="number" name="home_bet_{{ m.id }}" value="{{ m.user_home_bet }}" min="0" oninput="if(this.value < 0) this.value = 0;" style="width:40px; text-align:center;" required> - 
+                                <input type="number" name="away_bet_{{ m.id }}" value="{{ m.user_away_bet }}" min="0" oninput="if(this.value < 0) this.value = 0;" style="width:40px; text-align:center;" required>
                             {% endif %}
                         </td>
                         <td>
