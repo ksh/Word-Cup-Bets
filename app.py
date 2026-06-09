@@ -334,14 +334,25 @@ def dashboard():
     match_data = []
     for m in db_matches:
         kickoff_dt = datetime.strptime(m['kickoff'], "%Y-%m-%d %H:%M:%S")
-        is_locked = now >= (kickoff_dt - timedelta(hours=1))
+        
+        # Stricter Lockout: Lock bets if time is up, OR if an admin has already entered an official score line
+        has_official_score = m['home_score'] is not None and m['away_score'] is not None
+        
+        is_locked = now >= (kickoff_dt - timedelta(hours=1)) or has_official_score
         is_started = now >= kickoff_dt
         
+        # COPA RULE FIX: If someone inputs a score early for testing, DO NOT leak other bets 
+        # unless the official tournament calendar clock says the game has legally kicked off.
+        if has_official_score and not is_started:
+            is_reveal_allowed = False
+        else:
+            is_reveal_allowed = is_started
+            
         user_bets = bets_lookup.get(m['id'], {})
         my_bet = user_bets.get(active_user)
         
         other_bets = []
-        if is_started:
+        if is_reveal_allowed:  # <-- Updated here
             for u in USERS:
                 if u != active_user and u in user_bets:
                     other_bets.append((u, user_bets[u][0], user_bets[u][1]))
