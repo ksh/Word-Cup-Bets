@@ -156,7 +156,7 @@ def dashboard():
     current_username = current_user.username 
     conn = get_db()
     
-  if request.method == "POST":
+    if request.method == "POST":
         db_matches = conn.execute("SELECT id, kickoff FROM matches").fetchall()
         
         # 1. Clean out the user's old unlocked bets to prevent database locks
