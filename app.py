@@ -417,6 +417,12 @@ def admin_panel():
 
 @app.route("/admin/save", methods=["POST"])
 def admin_save():
+    # Double check this matches whatever secret string you selected earlier!
+    password = request.args.get("pass")
+    if password != "mysecret2026":
+        flash("🔒 Unauthorized Access!")
+        return redirect(url_for("dashboard"))
+
     conn = get_db()
     db_matches = conn.execute("SELECT id FROM matches").fetchall()
     
@@ -424,12 +430,16 @@ def admin_save():
         h_val = request.form.get(f"score_h_{m['id']}")
         a_val = request.form.get(f"score_a_{m['id']}")
         
-        if h_val != "" and h_val is not None and a_val != "" and a_val is not None:
+        # EXPLICIT FIX: This reads whatever the form inputs send.
+        # If the text box is empty, has spaces, or was deleted, it forces a database wipe.
+        if h_val is not None and h_val.strip() != "" and a_val is not None and a_val.strip() != "":
             conn.execute(
                 "UPDATE matches SET home_score=?, away_score=? WHERE id=?",
-                (int(h_val), int(a_val), m['id'])
+                (int(h_val.strip()), int(a_val.strip()), m['id'])
             )
         else:
+            # THIS IS CRITICAL: If you deleted the numbers, this forcefully 
+            # resets the row back to NULL, wiping out Ricardo's test scores completely.
             conn.execute(
                 "UPDATE matches SET home_score=NULL, away_score=NULL WHERE id=?",
                 (m['id'],)
@@ -437,9 +447,8 @@ def admin_save():
             
     conn.commit()
     conn.close()
-    flash("Official match outcomes updated, leaderboard points recalculated!")
-    return redirect(url_for("admin_panel"))
-
+    flash("Database synchronized! Blank entries successfully reset to TBD.")
+    return redirect(url_for("admin_panel", pass=password))
 @app.route("/download-db-backup-xyz")
 def download_db():
     if os.path.exists(DB_FILE):
