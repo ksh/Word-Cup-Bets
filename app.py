@@ -14,7 +14,7 @@ login_manager = LoginManager()
 login_manager.login_view = "login"  # Corrected config key
 login_manager.init_app(app)
 
-DB_FILE = "world_cup_bets.db"
+DB_FILE = "world_cup_bets_v2.db"
 
 def get_db():
     conn = sqlite3.connect(DB_FILE)
